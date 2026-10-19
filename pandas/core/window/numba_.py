@@ -132,17 +132,22 @@ def generate_numba_ewm_func(
             nobs = int(not np.isnan(weighted))
             sub_result[0] = weighted if nobs >= minimum_periods else np.nan
             old_wt = 1.0
+            # time elapsed since the last update of old_wt; with ignore_na=True
+            # the deltas of skipped missing values are accumulated (GH#54604)
+            delta = 0.0
 
             for j in range(1, len(window)):
                 cur = window[j]
                 is_observation = not np.isnan(cur)
                 nobs += is_observation
+                # note that len(deltas) = len(vals) - 1 and deltas[i]
+                # is to be used in conjunction with vals[i+1]
+                delta += deltas[start + j - 1]
                 if not np.isnan(weighted):
                     if is_observation or not ignore_na:
                         if normalize:
-                            # note that len(deltas) = len(vals) - 1 and deltas[i]
-                            # is to be used in conjunction with vals[i+1]
-                            old_wt *= old_wt_factor ** deltas[start + j - 1]
+                            old_wt *= old_wt_factor**delta
+                            delta = 0.0
                             if not adjust and com == 1:
                                 # update in case of irregular-interval time series
                                 new_wt = 1.0 - old_wt
@@ -163,6 +168,7 @@ def generate_numba_ewm_func(
                                 weighted += cur
                 elif is_observation:
                     weighted = cur
+                    delta = 0.0
 
                 sub_result[j] = weighted if nobs >= minimum_periods else np.nan
 
@@ -308,17 +314,22 @@ def generate_numba_ewm_table_func(
         weighted = values[0].copy()
         nobs = (~np.isnan(weighted)).astype(np.int64)
         result[0] = np.where(nobs >= minimum_periods, weighted, np.nan)
+        # time elapsed since the last update of old_wt; with ignore_na=True
+        # the deltas of skipped missing values are accumulated (GH#54604)
+        delta = np.zeros(values.shape[1])
         for i in range(1, len(values)):
             cur = values[i]
             is_observations = ~np.isnan(cur)
             nobs += is_observations.astype(np.int64)
             for j in numba.prange(len(cur)):
+                # note that len(deltas) = len(vals) - 1 and deltas[i]
+                # is to be used in conjunction with vals[i+1]
+                delta[j] += deltas[i - 1]
                 if not np.isnan(weighted[j]):
                     if is_observations[j] or not ignore_na:
                         if normalize:
-                            # note that len(deltas) = len(vals) - 1 and deltas[i]
-                            # is to be used in conjunction with vals[i+1]
-                            old_wt[j] *= old_wt_factor ** deltas[i - 1]
+                            old_wt[j] *= old_wt_factor ** delta[j]
+                            delta[j] = 0.0
                             if not adjust and com == 1:
                                 # update in case of irregular-interval time series
                                 new_wt = 1.0 - old_wt[j]

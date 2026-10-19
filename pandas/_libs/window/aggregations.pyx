@@ -2272,7 +2272,7 @@ def ewm(const float64_t[:] vals, const int64_t[:] start, const int64_t[:] end,
         const float64_t[:] sub_vals
         const float64_t[:] sub_deltas=None
         ndarray[float64_t] sub_output, output = np.empty(N, dtype=np.float64)
-        float64_t alpha, old_wt_factor, new_wt, weighted, old_wt, cur
+        float64_t alpha, old_wt_factor, new_wt, weighted, old_wt, cur, delta
         bint is_observation, use_deltas
 
     if N == 0:
@@ -2301,17 +2301,24 @@ def ewm(const float64_t[:] vals, const int64_t[:] start, const int64_t[:] end,
         sub_output[0] = weighted if nobs >= minp else NaN
         old_wt = 1.
 
+        # time elapsed since the last update of old_wt; with ignore_na=True
+        # the deltas of skipped missing values are accumulated (GH#54604)
+        delta = 0.
+
         with nogil:
             for i in range(1, win_size):
                 cur = sub_vals[i]
                 is_observation = cur == cur
                 nobs += is_observation
+                if use_deltas:
+                    delta += sub_deltas[i - 1]
                 if weighted == weighted:
 
                     if is_observation or not ignore_na:
                         if normalize:
                             if use_deltas:
-                                old_wt *= old_wt_factor ** sub_deltas[i - 1]
+                                old_wt *= old_wt_factor ** delta
+                                delta = 0.
                             else:
                                 old_wt *= old_wt_factor
                         else:
@@ -2333,6 +2340,7 @@ def ewm(const float64_t[:] vals, const int64_t[:] start, const int64_t[:] end,
                                 weighted += cur
                 elif is_observation:
                     weighted = cur
+                    delta = 0.
 
                 sub_output[i] = weighted if nobs >= minp else NaN
 

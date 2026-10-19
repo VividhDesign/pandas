@@ -116,6 +116,31 @@ def test_ewma_with_times_variable_spacing(tz_aware_fixture, unit, adjust):
     tm.assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize("ignore_na", [True, False])
+@pytest.mark.parametrize("adjust, expected", [(True, 3.4), (False, 3.25)])
+def test_ewma_with_times_ignore_na(engine, ignore_na, adjust, expected):
+    # GH#54604 the time elapsed over a missing value must not be dropped
+    df = pd.DataFrame({"B": [1.0, np.nan, 4.0]})
+    times = pd.DatetimeIndex(["2020-01-01", "2020-01-02", "2020-01-03"])
+    result = df.ewm(
+        halflife="1 day", times=times, ignore_na=ignore_na, adjust=adjust
+    ).mean(engine=engine)
+    expected = pd.DataFrame({"B": [1.0, 1.0, expected]})
+    tm.assert_frame_equal(result, expected)
+
+
+def test_ewma_with_times_ignore_na_matches_dropna():
+    # GH#54604 with times, ignore_na=True is equivalent to dropping the NaNs
+    times = pd.DatetimeIndex(
+        ["2020-01-01", "2020-01-02", "2020-01-05", "2020-01-06", "2020-01-20"]
+    )
+    ser = pd.Series([1.0, np.nan, np.nan, 7.0, 2.0], index=times)
+    result = ser.ewm(halflife="2 days", times=times, ignore_na=True).mean()
+    valid = ser.dropna()
+    expected = valid.ewm(halflife="2 days", times=valid.index).mean()
+    tm.assert_series_equal(result[valid.index], expected)
+
+
 def test_ewm_with_nat_raises(halflife_with_times):
     # GH#38535
     ser = pd.Series(range(1))
