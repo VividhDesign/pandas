@@ -541,12 +541,39 @@ class ArrowStringArray(ObjectStringArrayMixin, ArrowExtensionArray, BaseStringAr
             flags
             or self._is_re_pattern_with_flags(pat)
             or self._needs_python_regex(pat)
+            or self._count_needs_python_regex(pat)
         ):
             return super()._str_count(pat, flags)
 
         pat, case, _ = self._preprocess_re_pattern(pat, True, 0)
         result = pc.count_substring_regex(self._pa_array, pat, ignore_case=not case)
         return self._convert_int_result(result)
+
+    def _count_needs_python_regex(self, pat: str | re.Pattern[str]) -> bool:
+        """
+        Whether ``count`` must use Python's ``re`` instead of pyarrow.
+
+        ``pc.count_substring_regex`` searches the rest of a string after each
+        match as if it were a new string, so a start anchor (``^`` or ``\\A``)
+        matches again after every match. After an empty match it also moves on
+        by one byte rather than one character, so a pattern that can match the
+        empty string is counted inside every multi-byte character. Python's
+        ``re.findall`` counts each of these once.
+        """
+        str_pat = pat.pattern if isinstance(pat, re.Pattern) else pat
+        _parser = self._re_parser()
+        try:
+            min_width = _parser.parse(str_pat).getwidth()[0]
+        except re.error:
+            # not valid for Python's re (e.g. RE2 syntax), leave it to pyarrow
+            return False
+        if min_width == 0:
+            return True
+        start_anchors = {
+            (_parser.AT, _parser.AT_BEGINNING),
+            (_parser.AT, _parser.AT_BEGINNING_STRING),
+        }
+        return any(node in start_anchors for node in self._regex_nodes(str_pat))
 
     def _str_partition(self, sep: str, expand: bool):
         if expand:

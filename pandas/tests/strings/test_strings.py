@@ -178,6 +178,33 @@ def test_count_unicode_regex_classes(any_string_dtype, pat, expected_data):
     tm.assert_series_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    "pat, expected_data",
+    [
+        # patterns that can match the empty string, counted once per character
+        # boundary, also for multi-byte characters
+        ("", [3, 3, 1, 3, 4]),
+        ("x*", [3, 3, 1, 3, 4]),
+        ("a?", [3, 3, 1, 3, 4]),
+        (r"\Z", [1, 1, 1, 1, 1]),
+        # start anchors match once, not again after every match
+        ("^", [1, 1, 1, 1, 1]),
+        (r"\A", [1, 1, 1, 1, 1]),
+        ("^a", [1, 0, 0, 1, 1]),
+        (r"\Aa", [1, 0, 0, 1, 1]),
+        ("b|^", [2, 1, 1, 1, 2]),
+    ],
+)
+def test_count_zero_width_and_start_anchor(any_string_dtype, pat, expected_data):
+    expected_dtype = (
+        "int64" if is_object_or_nan_string_dtype(any_string_dtype) else "Int64"
+    )
+    ser = pd.Series(["ab", "東京", "", "aa", "a\nb"], dtype=any_string_dtype)
+    result = ser.str.count(pat)
+    expected = pd.Series(expected_data, dtype=expected_dtype)
+    tm.assert_series_equal(result, expected)
+
+
 def test_repeat(any_string_dtype):
     ser = pd.Series(["a", "b", np.nan, "c", np.nan, "d"], dtype=any_string_dtype)
 
