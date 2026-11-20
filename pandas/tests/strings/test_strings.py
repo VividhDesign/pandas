@@ -1070,6 +1070,19 @@ def test_setitem_with_different_string_storage():
         (r"(a|\s)", True),
         (r"\\s", False),
         (r"[sS]", False),
+        # atomic groups and possessive quantifiers, which RE2 does not support
+        (r"(?>a+)b", True),
+        (r"(?>\w)", True),
+        (r"a++b", True),
+        (r"(?:ab)?+", True),
+        (r"a+b", False),
+        # {,n} quantifiers, which RE2 matches literally
+        (r"a{,2}", True),
+        (r"(ab){,3}", True),
+        (r"\\{,2}", True),
+        (r"\{,2}", False),
+        (r"a{0,2}", False),
+        (r"a{2,}", False),
     ],
 )
 def test_needs_python_regex_unsupported_code(pat, expected):
@@ -1092,7 +1105,6 @@ def test_needs_python_regex_unsupported_code(pat, expected):
         (r"[\w-]", True),
         (r"(?:x\D)*", True),
         (r"(foo|bar\d)", True),
-        (r"(?>\w)", True),
         (r"[a-z0-9_]+", False),
         (r"\\w", False),
         (r"abc", False),

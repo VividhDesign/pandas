@@ -1153,6 +1153,54 @@ def test_replace_lookarounds(any_string_dtype, pat, expected_data):
 
 
 @pytest.mark.parametrize(
+    "pat, contains, count, replaced",
+    [
+        # atomic groups and possessive quantifiers, which RE2 does not support
+        (
+            r"(?>a+)b",
+            [True, True, False, False, False],
+            [1, 1, 0, 0, 0],
+            ["-", "-", "b", "a{,2}b", "xy"],
+        ),
+        (
+            r"a++b",
+            [True, True, False, False, False],
+            [1, 1, 0, 0, 0],
+            ["-", "-", "b", "a{,2}b", "xy"],
+        ),
+        # {,n} means {0,n}, while RE2 matches it literally
+        (
+            r"a{,2}b",
+            [True, True, True, True, False],
+            [1, 1, 1, 1, 0],
+            ["a-", "-", "-", "a{,2}-", "xy"],
+        ),
+        (
+            r"(?:ab){,1}b",
+            [True, True, True, True, False],
+            [1, 1, 1, 1, 0],
+            ["aaa-", "a-", "-", "a{,2}-", "xy"],
+        ),
+    ],
+)
+def test_regex_syntax_python_only(any_string_dtype, pat, contains, count, replaced):
+    ser = pd.Series(["aaab", "ab", "b", "a{,2}b", "xy"], dtype=any_string_dtype)
+    if is_object_or_nan_string_dtype(any_string_dtype):
+        bool_dtype, int_dtype = "bool", "int64"
+    else:
+        bool_dtype, int_dtype = "boolean", "Int64"
+
+    result = ser.str.contains(pat)
+    tm.assert_series_equal(result, pd.Series(contains, dtype=bool_dtype))
+
+    result = ser.str.count(pat)
+    tm.assert_series_equal(result, pd.Series(count, dtype=int_dtype))
+
+    result = ser.str.replace(pat, "-", regex=True)
+    tm.assert_series_equal(result, pd.Series(replaced, dtype=any_string_dtype))
+
+
+@pytest.mark.parametrize(
     "pat, repl, expected_data",
     [
         (

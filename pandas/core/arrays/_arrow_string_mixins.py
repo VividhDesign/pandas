@@ -34,6 +34,10 @@ if TYPE_CHECKING:
 # (otherwise the \\u is escaped itself). Also checks for `\U` and `\N{`.
 _escaped_unicode_char = re.compile(r"(?<!\\)(?:\\\\)*\\(?:[uU]|N{)")
 
+# Matches a `{,n}` quantifier not preceded by an odd number of "\". Python reads it as
+# `{0,n}`, while RE2 matches it literally.
+_open_lower_bound_repeat = re.compile(r"(?<!\\)(?:\\\\)*\{,\d+\}")
+
 
 class ArrowStringArrayMixin:
     _pa_array: pa.ChunkedArray
@@ -117,7 +121,10 @@ class ArrowStringArrayMixin:
         This is the case for features not supported by RE2 / pyarrow or with
         different behaviour:
         - Not supported: lookaround assertions and backreferences, unicode escape
-          sequences like ``\\u``, ``\\U`` and ``\\N{}``
+          sequences like ``\\u``, ``\\U`` and ``\\N{}``, atomic groups ``(?>...)``
+          and possessive quantifiers such as ``a++``
+        - ``{,n}`` quantifiers, which Python reads as ``{0,n}`` while RE2 matches
+          them literally
         - ``\\s`` and ``\\S``, since RE2's ``\\s`` misses whitespace such as
           ``"\\x0b"`` even in ASCII data
         - ``\\w``, ``\\d`` and ``\\b`` (or their negations) on non-ASCII data, since
@@ -130,9 +137,17 @@ class ArrowStringArrayMixin:
         str_pat = pat.pattern if isinstance(pat, re.Pattern) else pat
         if re.search(_escaped_unicode_char, str_pat) is not None:
             return True
+        if re.search(_open_lower_bound_repeat, str_pat) is not None:
+            return True
 
         _parser = self._re_parser()
-        unsupported_ops = {_parser.ASSERT, _parser.ASSERT_NOT, _parser.GROUPREF}
+        unsupported_ops = {
+            _parser.ASSERT,
+            _parser.ASSERT_NOT,
+            _parser.GROUPREF,
+            _parser.ATOMIC_GROUP,
+            _parser.POSSESSIVE_REPEAT,
+        }
         whitespace = {
             # RE2's \s misses whitespace such as "\x0b", even in ASCII data
             (_parser.CATEGORY, _parser.CATEGORY_SPACE),
