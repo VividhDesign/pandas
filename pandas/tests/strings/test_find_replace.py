@@ -1227,6 +1227,30 @@ def test_replace_empty_pattern(any_string_dtype):
     tm.assert_series_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    "pat, n, expected_data",
+    [
+        # an empty match right after a non-empty match is also replaced
+        ("a?", -1, ["--b-", "-東-京-", "-", "---", "--\n-b-"]),
+        ("a|", -1, ["--b-", "-東-京-", "-", "---", "--\n-b-"]),
+        # with n > 1, an empty match is replaced once per position
+        ("x*", 2, ["-a-b", "-東-京", "-", "-a-a", "-a-\nb"]),
+        ("a|", 3, ["--b-", "-東-京-", "-", "---", "--\n-b"]),
+        # with n > 1, start anchors match once
+        ("^", 2, ["-ab", "-東京", "-", "-aa", "-a\nb"]),
+        (r"\A", 2, ["-ab", "-東京", "-", "-aa", "-a\nb"]),
+        ("(?m)^", 2, ["-ab", "-東京", "-", "-aa", "-a\n-b"]),
+        ("^a", 2, ["-b", "東京", "", "-a", "-\nb"]),
+        (r"\Aa", 3, ["-b", "東京", "", "-a", "-\nb"]),
+    ],
+)
+def test_replace_zero_width_and_start_anchor(any_string_dtype, pat, n, expected_data):
+    ser = pd.Series(["ab", "東京", "", "aa", "a\nb"], dtype=any_string_dtype)
+    result = ser.str.replace(pat, "-", n=n, regex=True)
+    expected = pd.Series(expected_data, dtype=any_string_dtype)
+    tm.assert_series_equal(result, expected)
+
+
 # --------------------------------------------------------------------------------------
 # str.match
 # --------------------------------------------------------------------------------------

@@ -520,6 +520,7 @@ class ArrowStringArray(ObjectStringArrayMixin, ArrowExtensionArray, BaseStringAr
                 isinstance(repl, str) and r"\g<" in repl
             )
             or (regex and self._needs_python_regex(pat))
+            or (regex and self._replace_needs_python_regex(pat, n))
         ):
             return super()._str_replace(pat, repl, n, case, flags, regex)
 
@@ -529,6 +530,35 @@ class ArrowStringArray(ObjectStringArrayMixin, ArrowExtensionArray, BaseStringAr
         return ArrowStringArrayMixin._str_replace(
             self, pat, repl, n, case, flags, regex
         )
+
+    def _replace_needs_python_regex(self, pat: str, n: int) -> bool:
+        """
+        Whether ``replace`` must use Python's ``re`` instead of pyarrow.
+
+        Since Python 3.7, ``re.sub`` also replaces an empty match right after a
+        non-empty one (``re.sub("a?", "-", "ab")`` gives ``"--b-"``), which RE2
+        skips. With a limited number of replacements, pyarrow searches the rest
+        of a string after each replacement as if it were a new string, so an
+        empty match is replaced again at the same position and a start anchor
+        (``^`` or ``\\A``) matches again.
+        """
+        _parser = self._re_parser()
+        try:
+            min_width, max_width = _parser.parse(pat).getwidth()
+        except re.error:
+            # not valid for Python's re (e.g. RE2 syntax), leave it to pyarrow
+            return False
+        if min_width == 0 and max_width > 0:
+            return True
+        if n > 1:
+            if min_width == 0:
+                return True
+            start_anchors = {
+                (_parser.AT, _parser.AT_BEGINNING),
+                (_parser.AT, _parser.AT_BEGINNING_STRING),
+            }
+            return any(node in start_anchors for node in self._regex_nodes(pat))
+        return False
 
     def _str_repeat(self, repeats: int | Sequence[int]):
         if not isinstance(repeats, int):
