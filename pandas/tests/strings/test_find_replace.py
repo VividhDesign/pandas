@@ -1209,6 +1209,34 @@ def test_replace_unicode_escape_patterns(any_string_dtype, pat):
     tm.assert_series_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    "pat, repl, expected_data",
+    [
+        # character escapes, which RE2 rejects
+        ("a", r"\n", ["\nbc", "x\ny", ""]),
+        ("a", r"\t", ["\tbc", "x\ty", ""]),
+        ("(a)", r"<\1>\n", ["<a>\nbc", "x<a>\ny", ""]),
+        # octal escapes, which RE2 reads as a reference to the whole match
+        ("(a)", r"\0", ["\x00bc", "x\x00y", ""]),
+        ("(a)", r"\01", ["\x01bc", "x\x01y", ""]),
+        # an escaped backslash is a literal backslash for both
+        ("a", r"\\n", ["\\nbc", "x\\ny", ""]),
+    ],
+)
+def test_replace_repl_escapes(any_string_dtype, pat, repl, expected_data):
+    ser = pd.Series(["abc", "xay", ""], dtype=any_string_dtype)
+    result = ser.str.replace(pat, repl, regex=True)
+    expected = pd.Series(expected_data, dtype=any_string_dtype)
+    tm.assert_series_equal(result, expected)
+
+
+def test_replace_repl_bad_escape_raises(any_string_dtype):
+    # an unknown escape raises Python's error rather than ArrowInvalid
+    ser = pd.Series(["abc", "xay", ""], dtype=any_string_dtype)
+    with pytest.raises(re.error, match=r"bad escape \\q"):
+        ser.str.replace("(a)", r"\q", regex=True)
+
+
 def test_replace_empty_pattern(any_string_dtype):
     # https://github.com/pandas-dev/pandas/issues/64941
     ser = pd.Series(["abcd"], dtype=any_string_dtype)

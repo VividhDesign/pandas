@@ -81,6 +81,12 @@ def _check_pyarrow_available() -> None:
 # pairs of escaped backslashes intact.
 _unescaped_end_anchor = re.compile(r"(?<!\\)((?:\\\\)*)\\Z")
 
+# The escapes of a replacement string that RE2 takes: an escaped backslash and a
+# reference to one of the groups 1 to 9 (a second digit is a literal for RE2, GH#62653).
+# RE2 rejects character escapes such as \n, and reads \0 as the whole match, which
+# Python reads as an octal escape.
+_re2_replacement_escape = re.compile(r"\\[\\1-9]")
+
 
 # TODO: Inherit directly from BaseStringArrayMethods. Currently we inherit from
 # ObjectStringArrayMixin because we want to have the object-dtype based methods as
@@ -520,6 +526,11 @@ class ArrowStringArray(ObjectStringArrayMixin, ArrowExtensionArray, BaseStringAr
                 isinstance(repl, str) and r"\g<" in repl
             )
             or (regex and self._needs_python_regex(pat))
+            or (  # substitution contains an escape RE2 rejects or reads differently
+                regex
+                and isinstance(repl, str)
+                and "\\" in _re2_replacement_escape.sub("", repl)
+            )
         ):
             return super()._str_replace(pat, repl, n, case, flags, regex)
 
